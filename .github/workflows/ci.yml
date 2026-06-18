@@ -9,12 +9,25 @@ on:
     paths: ['src/**']
 
 jobs:
-  lint:
+  # S1.2 — Gitleaks secret scan: runs first, gates all other jobs.
+  # Full git history scanned on every push (fetch-depth: 0).
+  secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-python@v5
+  lint:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
         with:
           python-version: '3.10'
 
@@ -24,8 +37,49 @@ jobs:
       - name: Lint Python services
         run: ruff check src/ --exclude src/frontend
 
+  # S1.4 — Bandit SAST: runs in parallel with lint, after secret-scan gate.
+  # Scans src/ at medium confidence (ll) and medium severity (ii) minimum.
+  # All findings at this threshold are either fixed or carry # nosec annotations
+  # with documented justifications (see bandit-findings.md in PR description).
+  sast:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: '3.10'
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Bandit SAST scan
+        run: bandit -r src/ -ll -ii --exclude src/frontend -q
+
+  # S1.3 — Checkov IaC scan: runs in parallel with lint, after secret-scan gate.
+  # Scans terraform/ using .checkov.yaml which documents every skip with justification.
+  iac-scan:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: '3.10'
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Checkov IaC scan
+        run: |
+          checkov -d terraform/ --framework terraform \
+            --config-file .checkov.yaml \
+            --quiet
+
   build-and-scan:
-    needs: lint
+    needs: [lint, sast, iac-scan]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -33,10 +87,83 @@ jobs:
         service: [auth-service, gateway-service, converter-service, notification-service, outbox-relay]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: '3.10'
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      # S1.5 — pip-audit SCA (OSV database, source manifest level).
+      # Distinct from OWASP DC: consults OSV not NVD, scans declared deps in
+      # requirements.txt before Docker build rather than the full installed tree.
+      - name: pip-audit SCA (OSV)
+        run: |
+          pip install pip-audit
+          pip-audit -r src/${{ matrix.service }}/requirements.txt
+
+      # S1.7 — OWASP Dependency-Check SCA (NVD database, installed artefact level).
+      # Distinct from pip-audit: consults NVD not OSV, scans the full installed
+      # dependency tree (including transitive deps not in requirements.txt) via
+      # CPE matching after pip install. NVD database is cached weekly to avoid
+      # a 15-minute download on every push.
+      - name: Get week number for NVD cache key
+        id: date
+        run: echo "week=$(date +%Y-%U)" >> $GITHUB_OUTPUT
+
+      - name: Cache OWASP Dependency-Check NVD data
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf  # v4.2.2
+        with:
+          path: ~/.cache/dependency-check
+          key: dc-nvd-${{ runner.os }}-${{ steps.date.outputs.week }}
+          restore-keys: dc-nvd-${{ runner.os }}-
+
+      - name: OWASP Dependency-Check SCA (NVD)
+        run: |
+          DC_VERSION=12.1.0
+          DC_ZIP="/tmp/dependency-check-${DC_VERSION}-release.zip"
+          DC_BIN="/tmp/dc-install/dependency-check/bin/dependency-check.sh"
+
+          # Download DC CLI if not cached
+          if [ ! -f "$DC_BIN" ]; then
+            curl -sL \
+              "https://github.com/jeremylong/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip" \
+              -o "$DC_ZIP"
+            unzip -q "$DC_ZIP" -d /tmp/dc-install
+          fi
+
+          # Install the service's deps into an isolated directory for DC to scan
+          pip install -r src/${{ matrix.service }}/requirements.txt \
+            --target /tmp/dc-scan-${{ matrix.service }} --quiet
+
+          mkdir -p reports/
+
+          # --failOnCVSS 9 blocks on CRITICAL (CVSS ≥ 9); HIGH findings appear
+          # in the report but do not fail the build on first integration.
+          # Tighten to --failOnCVSS 7 after the baseline is clean.
+          "$DC_BIN" \
+            --scan "/tmp/dc-scan-${{ matrix.service }}" \
+            --project "vidcast-${{ matrix.service }}" \
+            --format HTML \
+            --out reports/ \
+            --data ~/.cache/dependency-check \
+            --failOnCVSS 9 \
+            --suppression dependency-check-suppressions.xml \
+            ${NVD_API_KEY:+--nvdApiKey "$NVD_API_KEY"} \
+            --nvdValidForHours 168
+        continue-on-error: true  # warn-only on first integration; remove after baseline clean
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: always()
+        with:
+          name: dependency-check-report-${{ matrix.service }}
+          path: reports/
+          retention-days: 30
 
       - name: Build Docker image
         run: |
@@ -45,7 +172,7 @@ jobs:
             src/${{ matrix.service }}/
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2  # v0.28.0
         with:
           image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ env.SHORT_SHA }}
           severity: CRITICAL,HIGH
@@ -55,7 +182,7 @@ jobs:
 
       - name: Login to Docker Hub
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

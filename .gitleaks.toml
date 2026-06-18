@@ -1,0 +1,25 @@
+# Gitleaks configuration for VidCast
+# useDefault = true enables all built-in Gitleaks rules (AWS key IDs, private key
+# headers, generic API tokens, database URIs, GitHub tokens, etc.)
+title = "VidCast Gitleaks Config"
+
+[extend]
+useDefault = true
+
+# Allowlist entries for confirmed false positives in committed files.
+# ONLY add patterns here after triaging that they are not real secrets.
+# Each entry must have a justification comment.
+# The S1.2 review gate string (AKIAIOSFODNN7EXAMPLE) is intentionally NOT
+# in this list — its purpose is to verify that Gitleaks blocks it.
+[allowlist]
+description = "VidCast confirmed false-positive allowlist"
+
+# Example (commented out) — add real entries as they are identified:
+# regexes = [
+#   '''placeholder_non_secret_pattern''',
+# ]
+paths = [
+  # The pip-compiled requirements.in files are the spec inputs — they contain
+  # no secrets (only package names and version constraints).
+  '''src/.*/requirements\.in''',
+]

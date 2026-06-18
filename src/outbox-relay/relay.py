@@ -37,7 +37,7 @@ RABBIT_HOST = os.environ.get("RABBITMQ_HOST", "rabbitmq")
 RABBIT_USER = os.environ.get("RABBITMQ_DEFAULT_USER", "guest")
 RABBIT_PASS = os.environ.get("RABBITMQ_DEFAULT_PASS", "guest")
 
-HEALTH_FILE = "/tmp/healthy"
+HEALTH_FILE = "/tmp/healthy"  # nosec B108
 
 
 def heartbeat():
