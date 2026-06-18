@@ -111,6 +111,21 @@ module "storage" {
   tags              = local.common_tags
 }
 
+# Falco alerting infrastructure (S2.6 completion).
+# SNS topic + email subscription + IRSA role for Falcosidekick → SNS publish.
+# After apply: confirm the subscription email, then set the two output values
+# in deploy/helm/falco-values.yaml before running helm install.
+module "falco_alerting" {
+  source = "../../modules/falco-alerting"
+
+  cluster_name      = var.cluster_name
+  aws_region        = var.aws_region
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = module.eks.oidc_provider_url
+  alert_email       = "baabalola@gmail.com"
+  tags              = local.common_tags
+}
+
 # Cosign image signing key (S2.5 — hard prerequisite for Sprint S3).
 # Creates an asymmetric KMS key (ECC P-256) used by cosign in CI to sign
 # every built image. The key ARN output must be added as COSIGN_KMS_KEY_ID

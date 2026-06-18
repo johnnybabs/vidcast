@@ -1,49 +1,49 @@
 # Falco Helm values for VidCast (S2.6 — runtime threat detection).
-# Deploy command (run only after human review — do not run automatically):
 #
+# PRE-INSTALL CHECKLIST (do before helm install):
+# 1. Run: terraform apply -target=module.falco_alerting
+# 2. Confirm the subscription email sent to baabalola@gmail.com
+# 3. Fill in the two ARN placeholders below with terraform output values:
+#      terraform output -raw falco_alerts_topic_arn
+#      terraform output -raw falcosidekick_role_arn
+#
+# Deploy command (after checklist above — run only after human review):
 #   helm repo add falcosecurity https://falcosecurity.github.io/charts
 #   helm repo update
 #   helm install falco falcosecurity/falco \
 #     --namespace default \
 #     --values deploy/helm/falco-values.yaml
 #
-# Upgrade after a rule change:
+# Upgrade after a rule or value change:
 #   helm upgrade falco falcosecurity/falco \
 #     --namespace default \
 #     --values deploy/helm/falco-values.yaml
 #
 # Verify (Done when):
 #   kubectl exec -n default deploy/gateway -- /bin/sh
-#   → should produce a Slack CRITICAL alert within 10 seconds
+#   → should produce an SNS email alert within 10 seconds
 
 driver:
-  # modern_ebpf: uses the kernel's CO-RE eBPF support — no kernel module
-  # compilation required, fully compatible with EKS managed nodes. Node
-  # drain and restart are NOT needed to install this driver.
+  # modern_ebpf: CO-RE eBPF, no kernel module compilation, EKS-compatible.
+  # Node drain and restart are NOT needed to install this driver.
   kind: modern_ebpf
 
 falco:
-  # Load VidCast-specific rules from the ConfigMap created by the customRules
-  # block below. Built-in Falco rules remain active alongside ours.
   rulesFiles:
     - /etc/falco/falco_rules.yaml
     - /etc/falco/falco_rules.local.yaml
     - /etc/falco/rules.d/
 
-  # JSON output to stdout makes log shipping (Fluent Bit → CloudWatch, Sprint S4)
-  # structured without additional parsing.
+  # JSON output makes log shipping (Fluent Bit → CloudWatch, Sprint S4) work
+  # without extra parsing.
   jsonOutput: true
   logLevel: info
 
 # Mount the VidCast custom rules file into /etc/falco/rules.d/
+# This block is the deployed version; deploy/falco/vidcast-rules.yaml is the
+# annotated source. Keep them in sync — update both together.
 customRules:
   vidcast-rules.yaml: |
-    # Loaded from deploy/falco/vidcast-rules.yaml — kept in sync manually.
-    # If this file and deploy/falco/vidcast-rules.yaml diverge, the Helm
-    # values are authoritative (what is deployed). Update both together.
-    #
-    # See deploy/falco/vidcast-rules.yaml for the full annotated version.
-
     - macro: vidcast_app_pods
       condition: >
         k8s.ns.name = "default" and
@@ -123,20 +123,28 @@ customRules:
 
 falcosidekick:
   enabled: true
-  config:
-    slack:
-      # Replace with your actual Slack incoming webhook URL.
-      # Create one at: https://api.slack.com/apps → Incoming Webhooks
-      # This is the same channel/webhook used for GuardDuty SNS alerts
-      # so on-call sees both AWS-level and kernel-level events in one place.
-      webhookurl: "REPLACE_WITH_SLACK_WEBHOOK_URL"
-      # minimumpriority: "warning"  # uncomment to suppress DEBUG/INFO noise
 
-    # Optional: route CRITICAL findings to SNS for parity with GuardDuty alerts.
-    # Uncomment and fill in the topic ARN once GuardDuty SNS topic exists (S2.4).
-    # sns:
-    #   topicarn: "arn:aws:sns:eu-west-2:501562869470:vidcast-security-alerts"
-    #   minimumpriority: "critical"
+  config:
+    aws:
+      # IRSA — when useirsa=true the chart annotates the falco-falcosidekick
+      # ServiceAccount with rolearn automatically. The pod's AWS SDK picks up
+      # short-lived credentials via the projected service account token; no
+      # long-lived AWS keys are stored anywhere. The IRSA role allows only
+      # sns:Publish on the vidcast-falco-alerts topic, nothing broader.
+      useirsa: true
+      rolearn: "REPLACE_WITH_FALCOSIDEKICK_ROLE_ARN"
+      # ↑ terraform output -raw falcosidekick_role_arn
+      # → arn:aws:iam::501562869470:role/vidcast-cluster-falcosidekick-irsa
+      region: "eu-west-2"
+
+      # Route all Falco alerts to the vidcast-falco-alerts SNS topic.
+      # On-call receives the same email thread for both Falco kernel-level events
+      # and AWS-level events (GuardDuty SNS, when enabled in Sprint S2.4).
+      sns:
+        topicarn: "REPLACE_WITH_FALCO_SNS_TOPIC_ARN"
+        # ↑ terraform output -raw falco_alerts_topic_arn
+        # → arn:aws:sns:eu-west-2:501562869470:vidcast-falco-alerts
+        minimumpriority: "warning"  # suppress DEBUG/INFO; deliver WARNING and above
 
 resources:
   requests:
