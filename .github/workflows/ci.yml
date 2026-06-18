@@ -140,20 +140,19 @@ jobs:
 
           mkdir -p reports/
 
-          # --failOnCVSS 9 blocks on CRITICAL (CVSS ≥ 9); HIGH findings appear
-          # in the report but do not fail the build on first integration.
-          # Tighten to --failOnCVSS 7 after the baseline is clean.
+          # --failOnCVSS 7 blocks on HIGH and CRITICAL (CVSS ≥ 7).
+          # Baseline confirmed clean (0 findings) across all 5 services via
+          # Grype (NVD+GHSA+OSV) before this threshold was tightened.
           "$DC_BIN" \
             --scan "/tmp/dc-scan-${{ matrix.service }}" \
             --project "vidcast-${{ matrix.service }}" \
             --format HTML \
             --out reports/ \
             --data ~/.cache/dependency-check \
-            --failOnCVSS 9 \
+            --failOnCVSS 7 \
             --suppression dependency-check-suppressions.xml \
             ${NVD_API_KEY:+--nvdApiKey "$NVD_API_KEY"} \
             --nvdValidForHours 168
-        continue-on-error: true  # warn-only on first integration; remove after baseline clean
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
