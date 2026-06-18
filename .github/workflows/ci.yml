@@ -141,18 +141,30 @@ jobs:
           mkdir -p reports/
 
           # --failOnCVSS 7 blocks on HIGH and CRITICAL (CVSS ≥ 7).
-          # Baseline confirmed clean (0 findings) across all 5 services via
-          # Grype (NVD+GHSA+OSV) before this threshold was tightened.
-          "$DC_BIN" \
-            --scan "/tmp/dc-scan-${{ matrix.service }}" \
-            --project "vidcast-${{ matrix.service }}" \
-            --format HTML \
-            --out reports/ \
-            --data ~/.cache/dependency-check \
-            --failOnCVSS 7 \
-            --suppression dependency-check-suppressions.xml \
-            ${NVD_API_KEY:+--nvdApiKey "$NVD_API_KEY"} \
-            --nvdValidForHours 168
+          # Retry loop: the NVD API can return HTTP 524 (Cloudflare origin
+          # timeout) on a cold cache first-run. 3 attempts with 90s delays
+          # handle transient failures without silencing real CVSS findings.
+          for attempt in 1 2 3; do
+            echo "DC attempt ${attempt}/3..."
+            "$DC_BIN" \
+              --scan "/tmp/dc-scan-${{ matrix.service }}" \
+              --project "vidcast-${{ matrix.service }}" \
+              --format HTML \
+              --out reports/ \
+              --data ~/.cache/dependency-check \
+              --failOnCVSS 7 \
+              --suppression dependency-check-suppressions.xml \
+              ${NVD_API_KEY:+--nvdApiKey "$NVD_API_KEY"} \
+              --nvdValidForHours 168 && break
+            DC_EXIT=$?
+            if [ "$attempt" -lt 3 ]; then
+              echo "DC failed (exit ${DC_EXIT}), waiting 90s before retry..."
+              sleep 90
+            else
+              echo "DC failed after 3 attempts"
+              exit $DC_EXIT
+            fi
+          done
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
 
