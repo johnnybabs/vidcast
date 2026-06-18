@@ -1,0 +1,150 @@
+# Falco Helm values for VidCast (S2.6 — runtime threat detection).
+# Deploy command (run only after human review — do not run automatically):
+#
+#   helm repo add falcosecurity https://falcosecurity.github.io/charts
+#   helm repo update
+#   helm install falco falcosecurity/falco \
+#     --namespace default \
+#     --values deploy/helm/falco-values.yaml
+#
+# Upgrade after a rule change:
+#   helm upgrade falco falcosecurity/falco \
+#     --namespace default \
+#     --values deploy/helm/falco-values.yaml
+#
+# Verify (Done when):
+#   kubectl exec -n default deploy/gateway -- /bin/sh
+#   → should produce a Slack CRITICAL alert within 10 seconds
+
+driver:
+  # modern_ebpf: uses the kernel's CO-RE eBPF support — no kernel module
+  # compilation required, fully compatible with EKS managed nodes. Node
+  # drain and restart are NOT needed to install this driver.
+  kind: modern_ebpf
+
+falco:
+  # Load VidCast-specific rules from the ConfigMap created by the customRules
+  # block below. Built-in Falco rules remain active alongside ours.
+  rulesFiles:
+    - /etc/falco/falco_rules.yaml
+    - /etc/falco/falco_rules.local.yaml
+    - /etc/falco/rules.d/
+
+  # JSON output to stdout makes log shipping (Fluent Bit → CloudWatch, Sprint S4)
+  # structured without additional parsing.
+  jsonOutput: true
+  logLevel: info
+
+# Mount the VidCast custom rules file into /etc/falco/rules.d/
+customRules:
+  vidcast-rules.yaml: |
+    # Loaded from deploy/falco/vidcast-rules.yaml — kept in sync manually.
+    # If this file and deploy/falco/vidcast-rules.yaml diverge, the Helm
+    # values are authoritative (what is deployed). Update both together.
+    #
+    # See deploy/falco/vidcast-rules.yaml for the full annotated version.
+
+    - macro: vidcast_app_pods
+      condition: >
+        k8s.ns.name = "default" and
+        k8s.pod.label.app in (converter, gateway, auth, notification)
+
+    - macro: converter_pod
+      condition: >
+        k8s.ns.name = "default" and
+        k8s.pod.label.app = "converter"
+
+    - macro: mongodb_service_ips
+      condition: (fd.sip = "172.20.48.19")
+
+    - macro: rabbitmq_service_ips
+      condition: (fd.sip = "172.20.204.189")
+
+    - macro: redis_service_ips
+      condition: (fd.sip = "172.20.54.127")
+
+    - macro: converter_expected_destinations
+      condition: >
+        (mongodb_service_ips or rabbitmq_service_ips or redis_service_ips)
+
+    - rule: Shell spawned in VidCast application pod
+      desc: >
+        A shell was spawned in a converter, gateway, auth, or notification pod.
+        These pods run gunicorn/Python workers and never exec a shell in normal
+        operation. Any shell spawn indicates likely container escape or exploit.
+      condition: >
+        spawned_process and
+        proc.name in (shell_binaries) and
+        vidcast_app_pods
+      output: >
+        Shell spawned in VidCast pod
+        (pod=%k8s.pod.name app=%k8s.pod.label.app ns=%k8s.ns.name
+         user=%user.name cmd=%proc.cmdline parent=%proc.pname)
+      priority: CRITICAL
+      tags: [vidcast, shell-spawn, T1059]
+
+    - rule: Unexpected outbound connection from converter
+      desc: >
+        The converter pod made an outbound TCP connection to a destination
+        other than its three expected services (MongoDB, RabbitMQ, Redis).
+        The converter processes untrusted user-uploaded video files via FFmpeg;
+        an FFmpeg exploit that achieves RCE would trigger this rule when the
+        attacker attempts to exfiltrate data or reach a C2 server. This is the
+        specific risk Falco closes that GuardDuty cannot (GuardDuty operates at
+        the AWS API level, not inside the container kernel).
+      condition: >
+        outbound and
+        converter_pod and
+        not converter_expected_destinations and
+        not fd.sip in ("127.0.0.1", "::1")
+      output: >
+        Converter unexpected outbound connection
+        (pod=%k8s.pod.name dest=%fd.sip:%fd.sport
+         cmd=%proc.cmdline user=%user.name)
+      priority: CRITICAL
+      tags: [vidcast, exfiltration, converter, T1041]
+
+    - rule: Write to /etc in VidCast application pod
+      desc: >
+        A process wrote to /etc inside a VidCast application pod. Application
+        pods run as non-root (UID 1000) with readOnlyRootFilesystem; a write
+        to /etc indicates either a privilege escalation or a rootkit attempting
+        to persist by modifying system files.
+      condition: >
+        open_write and
+        fd.name startswith /etc and
+        vidcast_app_pods
+      output: >
+        Write to /etc in VidCast pod
+        (pod=%k8s.pod.name app=%k8s.pod.label.app
+         file=%fd.name user=%user.name cmd=%proc.cmdline)
+      priority: HIGH
+      tags: [vidcast, rootkit, privilege-escalation, T1543]
+
+falcosidekick:
+  enabled: true
+  config:
+    slack:
+      # Replace with your actual Slack incoming webhook URL.
+      # Create one at: https://api.slack.com/apps → Incoming Webhooks
+      # This is the same channel/webhook used for GuardDuty SNS alerts
+      # so on-call sees both AWS-level and kernel-level events in one place.
+      webhookurl: "REPLACE_WITH_SLACK_WEBHOOK_URL"
+      # minimumpriority: "warning"  # uncomment to suppress DEBUG/INFO noise
+
+    # Optional: route CRITICAL findings to SNS for parity with GuardDuty alerts.
+    # Uncomment and fill in the topic ARN once GuardDuty SNS topic exists (S2.4).
+    # sns:
+    #   topicarn: "arn:aws:sns:eu-west-2:501562869470:vidcast-security-alerts"
+    #   minimumpriority: "critical"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# DaemonSet is additive — installing Falco does not restart existing pods.
+# The eBPF driver attaches to the running kernel; no node drain required.

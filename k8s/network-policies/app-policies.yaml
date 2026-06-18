@@ -147,9 +147,11 @@ spec:
         - protocol: TCP
           port: 6379
 ---
-# NOTIFICATION — queue consumer (no ingress). Egress to rabbitmq, redis (A2), and
-# external SMTP (Gmail :587). SMTP is to 0.0.0.0/0:587 because Gmail's IPs are
-# dynamic; nothing internal listens on 587 so this opens no in-cluster path.
+# NOTIFICATION — queue consumer (no ingress). Egress to rabbitmq, redis (A2),
+# external SMTP (Gmail :587), and mongodb (S2.2 B3 batch email — reads job_status
+# to detect when a multi-file batch is complete before sending the summary email).
+# SMTP is to 0.0.0.0/0:587 because Gmail's IPs are dynamic; nothing internal
+# listens on 587 so this opens no in-cluster path.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -176,6 +178,13 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app: database  # MongoDB (S2.2) — batch email reads job_status collection
+      ports:
+        - protocol: TCP
+          port: 27017
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -1,0 +1,118 @@
+# VidCast custom Falco rules (S2.6).
+# These rules are scoped to VidCast's specific threat profile and supplement
+# the built-in Falco ruleset. They target the three risks that are unique to
+# this platform and that GuardDuty cannot cover (GuardDuty operates at the
+# AWS API / EKS audit-log level, not inside running containers).
+#
+# Deployment notes:
+# - These rules are embedded into falco-values.yaml under customRules and
+#   loaded by Helm into /etc/falco/rules.d/ on each DaemonSet pod.
+# - If you edit this file, update falco-values.yaml's customRules block too
+#   and run `helm upgrade` to push the change to the cluster.
+# - To test rule 1 after deploy:
+#     kubectl exec -n default deploy/gateway -- /bin/sh
+#   → should produce a Slack CRITICAL alert within 10 seconds.
+#
+# Cluster-specific values baked in (update if services are re-deployed):
+#   MongoDB service ClusterIP  : 172.20.48.19
+#   RabbitMQ service ClusterIP : 172.20.204.189
+#   Redis service ClusterIP    : 172.20.54.127
+# These are ClusterIPs (stable; assigned once at service creation) not pod IPs
+# (ephemeral; change on pod restart). Use `kubectl get svc -n default` to
+# verify if the cluster is rebuilt from scratch.
+
+# ─── Macros ───────────────────────────────────────────────────────────────────
+
+- macro: vidcast_app_pods
+  condition: >
+    k8s.ns.name = "default" and
+    k8s.pod.label.app in (converter, gateway, auth, notification)
+
+- macro: converter_pod
+  condition: >
+    k8s.ns.name = "default" and
+    k8s.pod.label.app = "converter"
+
+# Known good outbound destinations for the converter pod (service ClusterIPs).
+# The converter is the only application pod that processes untrusted external
+# data (user-uploaded video via FFmpeg), so it gets the tightest outbound rule.
+- macro: mongodb_service_ips
+  condition: (fd.sip = "172.20.48.19")
+
+- macro: rabbitmq_service_ips
+  condition: (fd.sip = "172.20.204.189")
+
+- macro: redis_service_ips
+  condition: (fd.sip = "172.20.54.127")
+
+- macro: converter_expected_destinations
+  condition: >
+    (mongodb_service_ips or rabbitmq_service_ips or redis_service_ips)
+
+# ─── Rule 1: Shell spawn in application pod ───────────────────────────────────
+
+- rule: Shell spawned in VidCast application pod
+  desc: >
+    A shell was spawned in a converter, gateway, auth, or notification pod.
+    These pods run gunicorn/Python workers that never exec a shell in normal
+    operation. Any shell spawn is a strong indicator of container escape,
+    interactive exploitation, or a reverse shell from an exploit.
+    The golden path this detects: attacker exploits FFmpeg CVE in converter →
+    achieves RCE → spawns /bin/sh → Falco fires within one syscall.
+  condition: >
+    spawned_process and
+    proc.name in (shell_binaries) and
+    vidcast_app_pods
+  output: >
+    Shell spawned in VidCast pod
+    (pod=%k8s.pod.name app=%k8s.pod.label.app ns=%k8s.ns.name
+     user=%user.name uid=%user.uid cmd=%proc.cmdline parent=%proc.pname
+     image=%container.image)
+  priority: CRITICAL
+  tags: [vidcast, shell-spawn, T1059]
+
+# ─── Rule 2: Unexpected outbound from converter ────────────────────────────────
+
+- rule: Unexpected outbound connection from converter
+  desc: >
+    The converter pod made an outbound TCP connection to a destination other
+    than MongoDB (job results), RabbitMQ (queue), or Redis (idempotency).
+    The converter processes untrusted user-uploaded video files via FFmpeg.
+    FFmpeg has a documented history of exploitable vulnerabilities in its codec
+    libraries (libavcodec, libavformat). An exploit achieving RCE would
+    typically follow with a C2 callback or data exfiltration — this rule fires
+    on that second step. GuardDuty cannot see this because no AWS API call is
+    made; the connection stays within the pod's network namespace until it
+    exits to an external IP.
+  condition: >
+    outbound and
+    converter_pod and
+    not converter_expected_destinations and
+    not fd.sip in ("127.0.0.1", "::1")
+  output: >
+    Converter unexpected outbound connection
+    (pod=%k8s.pod.name dest_ip=%fd.sip dest_port=%fd.sport
+     cmd=%proc.cmdline user=%user.name image=%container.image)
+  priority: CRITICAL
+  tags: [vidcast, exfiltration, converter, T1041]
+
+# ─── Rule 3: Write to /etc in application pod ─────────────────────────────────
+
+- rule: Write to /etc in VidCast application pod
+  desc: >
+    A process wrote to /etc inside a VidCast application pod. All application
+    pods run as non-root (UID 1000) and should have readOnlyRootFilesystem set
+    in their securityContext. A write to /etc indicates either a privilege
+    escalation (the container is running as root despite policy) or a rootkit
+    attempting to persist by modifying /etc/passwd, /etc/cron.d, or similar.
+  condition: >
+    open_write and
+    fd.name startswith /etc and
+    vidcast_app_pods
+  output: >
+    Write to /etc in VidCast pod
+    (pod=%k8s.pod.name app=%k8s.pod.label.app
+     file=%fd.name user=%user.name uid=%user.uid
+     cmd=%proc.cmdline image=%container.image)
+  priority: HIGH
+  tags: [vidcast, rootkit, privilege-escalation, T1543]

@@ -9,7 +9,8 @@
 # is covered by allow-dns.yaml.
 ---
 # MongoDB (app: database) — from gateway (GridFS + outbox), converter (read video /
-# write mp3), outbox-relay (read outbox).
+# write mp3), outbox-relay (read outbox), notification (S2.2 B3 batch email —
+# reads job_status to detect batch completion before sending summary email).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -32,6 +33,9 @@ spec:
         - podSelector:
             matchLabels:
               app: outbox-relay
+        - podSelector:
+            matchLabels:
+              app: notification  # S2.2 — batch email job_status reads
       ports:
         - protocol: TCP
           port: 27017

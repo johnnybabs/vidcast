@@ -111,6 +111,17 @@ module "storage" {
   tags              = local.common_tags
 }
 
+# Cosign image signing key (S2.5 — hard prerequisite for Sprint S3).
+# Creates an asymmetric KMS key (ECC P-256) used by cosign in CI to sign
+# every built image. The key ARN output must be added as COSIGN_KMS_KEY_ID
+# in GitHub Actions secrets before Sprint S3 begins.
+module "cosign" {
+  source = "../../modules/cosign"
+
+  cluster_name = var.cluster_name
+  tags         = local.common_tags
+}
+
 # Grant the GitHub Actions deploy role Kubernetes-level permissions on the
 # cluster. The IAM role policy (eks:DescribeCluster) only gets it a kubeconfig;
 # this access entry is what lets `kubectl set image` actually work. EKSEditPolicy
