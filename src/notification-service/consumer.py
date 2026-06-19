@@ -48,7 +48,7 @@ def main():
     # especially here: if email delivery fails (e.g. placeholder Gmail
     # password), the per-message touch below never runs, so the startup touch
     # is the only thing keeping the pod alive.
-    pathlib.Path("/tmp/healthy").touch()
+    pathlib.Path("/tmp/healthy").touch()  # nosec B108
 
     def callback(ch, method, properties, body):
         # correlation id forwarded from the gateway via the converter; "legacy"
@@ -93,7 +93,7 @@ def main():
         else:
             NOTIFICATIONS.labels("success").inc()
             ch.basic_ack(delivery_tag=method.delivery_tag)
-            pathlib.Path("/tmp/healthy").touch()
+            pathlib.Path("/tmp/healthy").touch()  # nosec B108
 
     channel.basic_consume(
         queue=mp3_queue, on_message_callback=callback

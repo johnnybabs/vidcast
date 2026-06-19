@@ -1,0 +1,84 @@
+# Checkov skip configuration for VidCast Terraform
+# Every entry documents WHY the check is skipped — not just that it is.
+# Reviews these entries before each sprint: if the underlying condition changes,
+# remove the skip and remediate.
+
+soft-fail: false
+
+# --- Accepted risks (dev environment constraints) ---
+
+skip-check:
+  # S3 cross-region replication: single-region deployment by design in dev.
+  # Replication adds cost (~$0.015/GB) and complexity that is not warranted for
+  # a development/portfolio environment. Named accepted risk in docs/THREAT_MODEL.md.
+  - CKV_AWS_144
+
+  # S3 access logging: backup bucket access logs would be another bucket to manage.
+  # CloudTrail (Sprint S2) provides API-level audit of S3 operations, which covers
+  # the access visibility requirement without per-bucket ACL logging overhead.
+  - CKV_AWS_18
+
+  # ECR KMS encryption: repositories use AES256 (SSE-S3) encryption, which is
+  # enabled. KMS-CMK would add $1/key/month per repo with no meaningful security
+  # gain for a dev environment where ECR stores the same images pushed from CI.
+  - CKV_AWS_136
+
+  # EKS public endpoint: endpoint_public_access=true is required for GitHub Actions
+  # OIDC-federated CI to reach the EKS API server. Disabling it would require a
+  # self-hosted runner in the VPC or a bastion/VPN. Accepted for dev; production
+  # would use private endpoint + runner in VPC.
+  - CKV_AWS_39
+
+  # EKS public endpoint 0.0.0.0/0: same reason as CKV_AWS_39. The public endpoint
+  # is restricted by API server auth (OIDC + RBAC), not by IP allowlist in dev.
+  # Production would add an IP allowlist for the CI runner's egress.
+  - CKV_AWS_38
+
+  # EKS etcd secrets encryption: KMS envelope encryption for etcd is a legitimate
+  # gap. Deferred until the cosign KMS key (Sprint S2) is provisioned — at that
+  # point a second key alias can be added for etcd encryption cheaply.
+  - CKV_AWS_58
+
+  # EKS control plane logging: full log type enablement (api, audit, authenticator,
+  # controllerManager, scheduler) adds CloudWatch cost. Audit logs are the
+  # security-relevant subset; the full set can be enabled when CloudTrail (Sprint S2)
+  # is in place and CloudWatch Log costs are reviewed.
+  - CKV_AWS_37
+
+  # Security group egress 0.0.0.0/0: EKS nodes require unrestricted egress to reach
+  # ECR (image pulls), S3 (backup writes, state backend), AWS service endpoints
+  # (SSM for ESO, EKS control plane). Restricting egress would require VPC endpoints
+  # for every AWS service used — cost and complexity not warranted in dev.
+  - CKV_AWS_382
+
+  # VPC subnets with public IP by default: nodes are in public subnets by design
+  # to eliminate NAT Gateway cost (~$32/month) in the dev environment. Accepted
+  # trade-off documented in PHASE_UP_PLAN.md §3.
+  - CKV_AWS_130
+
+  # Security group not attached to another resource: false positive from Checkov's
+  # static analysis. The node-port security group IS attached to the EKS managed
+  # node group via aws_eks_node_group.node_group.remote_access or the launch template.
+  # Checkov cannot see the attachment when it is expressed as a separate resource.
+  - CKV2_AWS_5
+
+  # Default VPC security group: the default SG is not explicitly managed in this
+  # Terraform (which is the source of the warning). The default SG allows all
+  # inbound from the same SG, which is acceptable within the VPC's private network.
+  # All application traffic enters via the explicit node-port SG.
+  - CKV2_AWS_12
+
+  # S3 event notifications: the backup bucket does not emit S3 event notifications.
+  # CloudTrail covers data-access auditing for S3. Event notifications would be
+  # useful for triggering automated restore tests — a follow-on observability item.
+  - CKV2_AWS_62
+
+  # VPC Flow Logs: not enabled to avoid CloudWatch Logs cost in dev. CloudTrail
+  # covers API-level events. VPC Flow Logs provide network-level visibility that
+  # becomes relevant at scale or under active incident investigation. Deferred.
+  - CKV2_AWS_11
+
+  # S3 KMS encryption: backup bucket uses AES256 (SSE-S3). KMS-CMK would add
+  # per-request cost on a low-volume bucket. AES256 provides encryption at rest;
+  # key management risk is lower than on a high-volume or externally-shared bucket.
+  - CKV_AWS_145

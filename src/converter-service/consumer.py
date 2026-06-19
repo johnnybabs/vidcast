@@ -80,7 +80,7 @@ def main():
     # liveness probe checks for this file; without an initial touch an idle
     # consumer (no messages yet) would never create it and crash-loop on the
     # probe. Each successfully processed message refreshes it below.
-    pathlib.Path("/tmp/healthy").touch()
+    pathlib.Path("/tmp/healthy").touch()  # nosec B108
 
     def callback(ch, method, properties, body):
         # correlation id from the gateway; "legacy" for old/unparseable bodies.
@@ -145,7 +145,7 @@ def main():
             if properties is not None and properties.timestamp:
                 CONVERSION_DURATION.observe(max(0.0, time.time() - properties.timestamp))
             ch.basic_ack(delivery_tag=method.delivery_tag)
-            pathlib.Path("/tmp/healthy").touch()
+            pathlib.Path("/tmp/healthy").touch()  # nosec B108
 
     channel.basic_consume(
         queue=video_queue, on_message_callback=callback

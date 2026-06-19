@@ -46,7 +46,7 @@ def login():
         # rowcount like some drivers), so we decide on the fetched row, not on the
         # return value of execute(). The old code branched on `res is None` and so
         # 500'd for unknown users instead of returning 401.
-        query = f"SELECT email, password, role FROM {auth_table_name} WHERE email = %s"
+        query = f"SELECT email, password, role FROM {auth_table_name} WHERE email = %s"  # nosec B608
         cur.execute(query, (auth.username,))
         user_row = cur.fetchone()
     finally:
@@ -86,7 +86,7 @@ def register():
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute(f"SELECT 1 FROM {auth_table_name} WHERE email = %s", (email,))
+        cur.execute(f"SELECT 1 FROM {auth_table_name} WHERE email = %s", (email,))  # nosec B608
         if cur.fetchone() is not None:
             return 'an account with that email already exists', 409
         # Store a bcrypt hash, never the plaintext. New sign-ups are always role
@@ -94,7 +94,7 @@ def register():
         # (the old code returned an admin JWT here, a privilege-escalation hole).
         hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
         cur.execute(
-            f"INSERT INTO {auth_table_name} (email, password, role) VALUES (%s, %s, 'user')",
+            f"INSERT INTO {auth_table_name} (email, password, role) VALUES (%s, %s, 'user')",  # nosec B608
             (email, hashed),
         )
         conn.commit()
@@ -153,7 +153,7 @@ def list_users():
     cur = conn.cursor()
     try:
         cur.execute(
-            f"SELECT email, role, created_at FROM {auth_table_name} ORDER BY created_at"
+            f"SELECT email, role, created_at FROM {auth_table_name} ORDER BY created_at"  # nosec B608
         )
         rows = cur.fetchall()
     finally:
@@ -182,7 +182,7 @@ def update_user_role(email):
     cur = conn.cursor()
     try:
         cur.execute(
-            f"UPDATE {auth_table_name} SET role = %s WHERE email = %s RETURNING email, role",
+            f"UPDATE {auth_table_name} SET role = %s WHERE email = %s RETURNING email, role",  # nosec B608
             (role, email),
         )
         updated = cur.fetchone()
@@ -197,4 +197,4 @@ def update_user_role(email):
     return jsonify({"email": updated[0], "role": updated[1]}), 200
 
 if __name__ == '__main__':
-    server.run(host='0.0.0.0', port=5000)
+    server.run(host='0.0.0.0', port=5000)  # nosec B104

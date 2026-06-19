@@ -9,12 +9,25 @@ on:
     paths: ['src/**']
 
 jobs:
-  lint:
+  # S1.2 — Gitleaks secret scan: runs first, gates all other jobs.
+  # Full git history scanned on every push (fetch-depth: 0).
+  secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-python@v5
+  lint:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
         with:
           python-version: '3.10'
 
@@ -24,8 +37,49 @@ jobs:
       - name: Lint Python services
         run: ruff check src/ --exclude src/frontend
 
+  # S1.4 — Bandit SAST: runs in parallel with lint, after secret-scan gate.
+  # Scans src/ at medium confidence (ll) and medium severity (ii) minimum.
+  # All findings at this threshold are either fixed or carry # nosec annotations
+  # with documented justifications (see bandit-findings.md in PR description).
+  sast:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: '3.10'
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Bandit SAST scan
+        run: bandit -r src/ -ll -ii --exclude src/frontend -q
+
+  # S1.3 — Checkov IaC scan: runs in parallel with lint, after secret-scan gate.
+  # Scans terraform/ using .checkov.yaml which documents every skip with justification.
+  iac-scan:
+    needs: secret-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: '3.10'
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Checkov IaC scan
+        run: |
+          checkov -d terraform/ --framework terraform \
+            --config-file .checkov.yaml \
+            --quiet
+
   build-and-scan:
-    needs: lint
+    needs: [lint, sast, iac-scan]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -33,10 +87,50 @@ jobs:
         service: [auth-service, gateway-service, converter-service, notification-service, outbox-relay]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@8d9ed9ac5c53483de85588cdf95a591a75ab9f55  # v5.5.0
+        with:
+          python-version: '3.10'
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      # S1.5 — pip-audit SCA (OSV database, source manifest level).
+      # Distinct from OWASP DC: consults OSV not NVD, scans declared deps in
+      # requirements.txt before Docker build rather than the full installed tree.
+      - name: pip-audit SCA (OSV)
+        run: |
+          pip install pip-audit
+          pip-audit -r src/${{ matrix.service }}/requirements.txt
+
+      # S1.7 — Grype SCA (NVD+GHSA+OSV, pre-built database).
+      # Originally specified as OWASP Dependency-Check (NVD live API). Substituted
+      # with Grype: services.nvd.nist.gov returned persistent HTTP 524 timeouts
+      # across 3 CI runs; Grype's pre-built database provides equivalent
+      # NVD+GHSA+OSV coverage without live API calls. Baseline verified: 0
+      # CRITICAL / 0 HIGH across all 5 services (Grype v0.114.0, 2026-06-18).
+      - name: Install Grype
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh \
+            | sh -s -- -b /usr/local/bin v0.114.0
+
+      - name: Grype SCA (NVD+GHSA+OSV)
+        run: |
+          mkdir -p reports/
+          set -o pipefail
+          grype "file:src/${{ matrix.service }}/requirements.txt" \
+            --fail-on critical \
+            --output table \
+            | tee reports/grype-${{ matrix.service }}.txt
+
+      - name: Upload Grype report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        if: always()
+        with:
+          name: grype-report-${{ matrix.service }}
+          path: reports/grype-${{ matrix.service }}.txt
+          retention-days: 30
 
       - name: Build Docker image
         run: |
@@ -45,7 +139,7 @@ jobs:
             src/${{ matrix.service }}/
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service }}:${{ env.SHORT_SHA }}
           severity: CRITICAL,HIGH
@@ -55,7 +149,7 @@ jobs:
 
       - name: Login to Docker Hub
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: docker/login-action@v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772  # v3.4.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}

@@ -1,3 +1,6 @@
+# lifecycle.sh config (holds DB/JWT/Gmail secrets — never commit)
+lifecycle.env
+
 # Terraform
 terraform.tfvars
 terraform.tfvars.json
@@ -37,6 +40,9 @@ FRONTEND_IMPROVEMENTS.md
 VIDCAST_PLAIN_ENGLISH_GUIDE.md
 CLAUDE.md
 PR_DESCRIPTION.md
+
+# CI scan reports (generated artifacts, not source)
+reports/
 
 # Build artifacts
 *.mp3
