@@ -40,7 +40,7 @@ images:
   - name: johnbaabalola/auth-service
     newTag: 3b2cc91
   - name: johnbaabalola/gateway-service
-    newTag: 3b2cc91
+    newTag: 327530e
   - name: johnbaabalola/converter-service
     newTag: 3b2cc91
   - name: johnbaabalola/notification-service
@@ -54,7 +54,7 @@ images:
     newTag: 3b2cc91
   - name: vidcast-frontend
     newName: 501562869470.dkr.ecr.eu-west-2.amazonaws.com/vidcast-frontend
-    newTag: 3b2cc91
+    newTag: 327530e
 
 # Dev runs one replica of each backend (frontend is already 1 in base).
 replicas:
