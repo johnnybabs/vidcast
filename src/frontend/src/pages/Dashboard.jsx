@@ -1,6 +1,6 @@
 import React from 'react'
 
-const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || 'http://localhost:30007'
+const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || 'https://grafana.vidcast.online'
 
 export default function Dashboard() {
   return (
