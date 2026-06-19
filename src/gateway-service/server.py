@@ -394,11 +394,15 @@ def unseen_count():
     if not access:
         return "not authorized", 401
 
-    since = request.args.get("since", "1970-01-01T00:00:00")
+    # .replace("Z", "+00:00") is required because the frontend passes
+    # new Date().toISOString() which emits a trailing "Z", and Python 3.10's
+    # fromisoformat() does not accept "Z" — that was only fixed in 3.11.
+    # This Dockerfile is pinned to python:3.10-slim-bookworm.
+    since = request.args.get("since", "1970-01-01T00:00:00+00:00")
     try:
-        since_dt = datetime.datetime.fromisoformat(since)
+        since_dt = datetime.datetime.fromisoformat(since.replace("Z", "+00:00"))
     except ValueError:
-        since_dt = datetime.datetime(1970, 1, 1)
+        since_dt = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
     # count_documents on the GridFS files collection — PyMongo 4 removed
     # Cursor.count(), and counting server-side avoids streaming file docs.
