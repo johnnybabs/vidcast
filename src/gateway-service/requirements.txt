@@ -36,3 +36,9 @@ gunicorn>=26.0.0
 # app with 2 workers — each is a separate process, so a scrape must aggregate
 # across them rather than see one worker's partial counters. Pure-Python, no OS deps.
 prometheus-client>=0.20.0
+# flask-limiter (A10): rate limits /login (brute-force) and /upload (quota), backed
+# by the in-cluster Redis so limits are shared across gunicorn workers. 3.x supports
+# Flask 3. `redis` is the client its Redis storage backend (via `limits`) needs — the
+# gateway did not previously depend on it (only the consumers' idempotency did).
+flask-limiter>=3.5,<4
+redis>=5.0.0

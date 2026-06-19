@@ -14,9 +14,13 @@ export async function register(email, password) {
   return res.data
 }
 
-export async function uploadVideo(file, token) {
+// Upload one or more video files (B1 batch). Accepts a single File or an array;
+// each is appended under "file" so the gateway's getlist("file") sees them all.
+// Returns { batch_id, results, queued, failed }.
+export async function uploadVideo(files, token) {
   const form = new FormData()
-  form.append('file', file)
+  const list = Array.isArray(files) ? files : [files]
+  list.forEach((f) => form.append('file', f))
   const res = await axios.post(`${BASE}/upload`, form, {
     headers: { Authorization: `Bearer ${token}` }
   })

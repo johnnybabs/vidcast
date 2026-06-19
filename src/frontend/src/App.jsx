@@ -24,10 +24,10 @@ export default function App() {
     setToken(t)
   }
 
-  // Derive the user's role from the JWT. isAdmin gates the privileged tabs and
-  // routes below. This is UX-only — the real control is the backend role check;
-  // the frontend hiding just keeps the experience clean.
-  const { isAdmin } = userFromToken(token)
+  // Derive the user's role + display name from the JWT. isAdmin gates the
+  // privileged tabs and routes below. This is UX-only — the real control is the
+  // backend role check; the frontend hiding just keeps the experience clean.
+  const { isAdmin, name } = userFromToken(token)
 
   // Polled count of conversions ready since `since` — shown as the Download badge.
   const unseen = useUnseenCount(token, since)
@@ -40,7 +40,9 @@ export default function App() {
       <header className="bg-indigo-950 border-b border-indigo-800 px-6 py-3 flex items-center justify-between">
         <span className="text-xl font-bold text-purple-400">🎙 VidCast</span>
         {token && (
-          <nav className="flex gap-2 text-sm">
+          <nav className="flex gap-2 text-sm items-center">
+            {/* UX1: greet the signed-in user by their display name. */}
+            <span className="text-gray-400 mr-2">Hi, <span className="text-purple-300 font-semibold">{name}</span></span>
             <NavLink to="/upload" className={({ isActive }) => `${nav} ${isActive ? active : ''}`}>Upload</NavLink>
             <NavLink
               to="/download"
@@ -68,7 +70,8 @@ export default function App() {
           <Route path="/" element={token ? <Navigate to="/upload" /> : <Login onLogin={handleLogin} />} />
           <Route path="/upload" element={token ? <Upload token={token} /> : <Navigate to="/" />} />
           <Route path="/download" element={token ? <Download token={token} /> : <Navigate to="/" />} />
-          <Route path="/my-files" element={token ? <MyConversions token={token} /> : <Navigate to="/" />} />
+          {/* UX3: visiting My Conversions also marks downloads seen (clears the badge). */}
+          <Route path="/my-files" element={token ? <MyConversions token={token} onSeen={markDownloadsSeen} /> : <Navigate to="/" />} />
           {/* Admin-only routes. Guarded even against direct URL entry: a non-admin
               who types /dashboard is bounced to /upload, an unauth user to /. */}
           <Route

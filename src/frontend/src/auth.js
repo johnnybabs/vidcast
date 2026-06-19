@@ -23,8 +23,12 @@ export function decodeJwt(token) {
 // Convenience: derive the user view-model from a raw token string.
 export function userFromToken(token) {
   const claims = decodeJwt(token)
+  const email = claims?.username || null
   return {
-    email: claims?.username || null,
+    email,
+    // UX1: friendly nav-bar name. Prefer the display_name claim; fall back to the
+    // email local-part for tokens minted before that claim existed.
+    name: claims?.display_name || (email ? email.split('@')[0] : null),
     role: claims?.role || 'anonymous',
     // Read the backward-compatible boolean; fall back to role string.
     isAdmin: claims?.admin === true || claims?.role === 'admin',

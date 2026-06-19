@@ -15,3 +15,8 @@ urllib3>=2.6.0
 # on a background HTTP thread (start_http_server) for a PodMonitor to scrape.
 # Pure-Python, no extra OS deps.
 prometheus-client>=0.20.0
+# pymongo (B3): read job_status to detect when a multi-file batch is complete and
+# send ONE summary email. Matches the floor used by the gateway/converter. Only
+# used at runtime when MONGODB_URI is set AND reachable — otherwise the service
+# safely falls back to one email per file (see send/email.py).
+pymongo>=4.3.3

@@ -8,6 +8,9 @@ from prometheus_client import Counter, start_http_server
 from send import email
 import rabbitmq_retry
 import idempotency
+from jsonlog import get_logger
+
+log = get_logger("notification")
 
 # B4 SLO 3 (end-to-end success). This consumer exposes a prometheus endpoint on its
 # own thread (scraped by a PodMonitor); vidcast_notifications_total{status="success"}
@@ -49,6 +52,13 @@ def main():
     pathlib.Path("/tmp/healthy").touch()
 
     def callback(ch, method, properties, body):
+        # I8/P3: carry the correlation id the gateway stamped (forwarded by the
+        # converter on the mp3 message). "legacy" for old/unparseable bodies.
+        try:
+            correlation_id = json.loads(body).get("correlation_id", "legacy")
+        except Exception:
+            correlation_id = "legacy"
+
         # A2: claim-once on the mp3_fid so a redelivered/duplicate message does
         # not send a second email for the same mp3.
         job_id = None
@@ -58,7 +68,7 @@ def main():
             except Exception:
                 job_id = None  # unparseable body — fall through and let A3 handle it
             if job_id and not idempotency.claim_once(job_id):
-                print(f"[idempotency] duplicate, skipping {job_id}", flush=True)
+                log.info("Duplicate message skipped", correlation_id=correlation_id, job_id=job_id)
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
@@ -67,11 +77,12 @@ def main():
         try:
             err = email.notification(body)
         except Exception as e:
-            print(f"notification error: {e}", flush=True)
+            log.error("Notification error", correlation_id=correlation_id, error=str(e))
             err = str(e)
 
         if err:
             NOTIFICATIONS.labels("failure").inc()
+            log.warning("Notification failed", correlation_id=correlation_id)
             # Route to retry (or terminal DLQ after MAX_RETRIES), then ACK the
             # original so it leaves the main queue — no more infinite requeue.
             outcome = rabbitmq_retry.handle_failure(ch, properties, body, mp3_queue)
@@ -89,7 +100,7 @@ def main():
         queue=mp3_queue, on_message_callback=callback
     )
 
-    print("Waiting for messages. To exit press CTRL+C")
+    log.info("Notification consumer ready, waiting for messages")
 
     channel.start_consuming()
 
@@ -97,7 +108,7 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("Interrupted")
+        log.info("Interrupted")
         try:
             sys.exit(0)
         except SystemExit:

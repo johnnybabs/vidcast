@@ -8,6 +8,10 @@ import time
 import pika
 from pymongo import MongoClient
 
+from jsonlog import get_logger
+
+log = get_logger("outbox-relay")
+
 # A1 transactional-outbox relay.
 #
 # This is a SEPARATE, SINGLE-REPLICA Deployment — deliberately not an in-process
@@ -77,6 +81,13 @@ def publish_pending(outbox):
                 {"_id": doc["_id"]},
                 {"$set": {"published_at": datetime.datetime.utcnow()}},
             )
+            # I8/P3: the gateway's correlation_id is inside the stored payload and is
+            # republished verbatim above — log it so the outbox hop is traceable too.
+            log.info(
+                "Outbox event published",
+                correlation_id=doc.get("payload", {}).get("correlation_id", "none"),
+                routing_key=doc.get("routing_key", "video"),
+            )
             published += 1
         return published
     finally:
@@ -85,14 +96,10 @@ def publish_pending(outbox):
 
 def main():
     if not MONGO_URI:
-        print("[outbox-relay] FATAL: MONGODB_VIDEOS_URI is not set", flush=True)
+        log.error("FATAL: MONGODB_VIDEOS_URI is not set")
         sys.exit(1)
 
-    print(
-        f"[outbox-relay] starting; poll_interval={POLL_INTERVAL}s "
-        f"rabbit_host={RABBIT_HOST}",
-        flush=True,
-    )
+    log.info("Outbox relay starting", poll_interval_seconds=POLL_INTERVAL, rabbit_host=RABBIT_HOST)
     # One Mongo client for the process lifetime; pymongo reconnects internally if
     # Mongo blips. get_default_database() resolves the db embedded in the URI
     # (the `videos` db), matching where the gateway wrote the outbox row.
@@ -104,11 +111,12 @@ def main():
         try:
             n = publish_pending(outbox)
             if n:
-                print(f"[outbox-relay] published {n} event(s)", flush=True)
+                log.info("Outbox cycle published events", count=n)
         except Exception as e:
             # Mongo or RabbitMQ unreachable, or a publish error: log, skip this
             # cycle, retry on the next poll. Never crash the pod.
-            print(f"[outbox-relay] cycle error (retrying in {POLL_INTERVAL}s): {e}", flush=True)
+            log.error("Outbox cycle error, retrying next poll",
+                      retry_in_seconds=POLL_INTERVAL, error=str(e))
         heartbeat()
         time.sleep(POLL_INTERVAL)
 
@@ -117,7 +125,7 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("Interrupted", flush=True)
+        log.info("Interrupted")
         try:
             sys.exit(0)
         except SystemExit:
