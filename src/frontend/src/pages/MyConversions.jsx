@@ -165,8 +165,8 @@ export default function MyConversions({ token, onSeen }) {
       )}
 
       {!loading && !error && files.length > 0 && (
-        <div className="bg-indigo-950 border border-indigo-800 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-indigo-950 border border-indigo-800 rounded-xl overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="text-left text-gray-400 border-b border-indigo-800">
                 <th className="px-4 py-3 font-medium">File</th>
