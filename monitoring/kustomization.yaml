@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Apply with: kubectl apply -k monitoring/
+#
+# Covers:
+#   1. PrometheusRules  — vidcast-alerts (CrashLoop/node/queue) + vidcast-slo-rules
+#                         (recording rules + multi-burn-rate SLO alerts for all 3 SLOs)
+#   2. Scrape configs   — ServiceMonitors for gateway and rabbitmq; PodMonitors for
+#                         converter and notification
+#   3. Grafana dashboard — vidcast-slo.json provisioned via ConfigMap so the Grafana
+#                         sidecar picks it up automatically (searchNamespace: monitoring)
+#
+# All resources target the monitoring namespace. The PrometheusRules and
+# ServiceMonitor/PodMonitors carry release: monitoring so kube-prometheus-stack's
+# operator picks them up.
+
+namespace: monitoring
+
+resources:
+  - alerts/vidcast-alerts.yaml
+  - alerts/vidcast-slo-rules.yaml
+  - scrape/gateway-servicemonitor.yaml
+  - scrape/converter-podmonitor.yaml
+  - scrape/notification-podmonitor.yaml
+  - scrape/rabbitmq-servicemonitor.yaml
+
+configMapGenerator:
+  - name: vidcast-slo-dashboard
+    files:
+      - vidcast-slo.json=dashboards/vidcast-slo.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"
+        release: monitoring
