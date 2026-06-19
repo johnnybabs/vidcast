@@ -77,21 +77,27 @@ spec:
         # "bad" = fraction of accepted uploads that did NOT result in a sent email.
         # Best evaluated over long windows: uploads and sends are minutes apart, so
         # short windows are noisy (can briefly exceed 1). See SLO.md caveat.
+        #
+        # "or vector(0)" on the notifications numerator: when uploads exist but
+        # no success notifications have been sent yet (failure case), the selector
+        # would otherwise return empty → NaN instead of a detectable burn rate.
+        # When BOTH rates are zero (idle, no uploads), rate_uploads denominator is
+        # also 0, so NaN propagates naturally — alerts stay quiet, which is correct.
         - record: slo:e2e_success:burnrate5m
           expr: |
-            (1 - (sum(rate(vidcast_notifications_total{status="success"}[5m]))
+            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[5m])) or vector(0))
                   / sum(rate(vidcast_uploads_total[5m])))) / 0.01
         - record: slo:e2e_success:burnrate30m
           expr: |
-            (1 - (sum(rate(vidcast_notifications_total{status="success"}[30m]))
+            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[30m])) or vector(0))
                   / sum(rate(vidcast_uploads_total[30m])))) / 0.01
         - record: slo:e2e_success:burnrate1h
           expr: |
-            (1 - (sum(rate(vidcast_notifications_total{status="success"}[1h]))
+            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[1h])) or vector(0))
                   / sum(rate(vidcast_uploads_total[1h])))) / 0.01
         - record: slo:e2e_success:burnrate6h
           expr: |
-            (1 - (sum(rate(vidcast_notifications_total{status="success"}[6h]))
+            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[6h])) or vector(0))
                   / sum(rate(vidcast_uploads_total[6h])))) / 0.01
 
     # ───────────────────────── burn-rate alerts ─────────────────────────

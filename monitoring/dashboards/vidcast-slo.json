@@ -25,7 +25,7 @@
       "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100,
         "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 25}, {"color": "green", "value": 50}]}}},
       "options": {"colorMode": "background", "reduceOptions": {"calcs": ["last"]}},
-      "targets": [{"expr": "100 * (1 - clamp_max((sum(increase(vidcast_gateway_requests_total{status=~\"5..\"}[7d])) / sum(increase(vidcast_gateway_requests_total[7d]))) / 0.001, 1))", "legendFormat": "remaining"}]
+      "targets": [{"expr": "100 * (1 - clamp_max(((sum(increase(vidcast_gateway_requests_total{status=~\"5..\"}[7d])) or vector(0)) / sum(increase(vidcast_gateway_requests_total[7d]))) / 0.001, 1))", "legendFormat": "remaining"}]
     },
     {
       "id": 2,
@@ -45,7 +45,7 @@
       "fieldConfig": {"defaults": {"unit": "h", "decimals": 1,
         "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 72}, {"color": "green", "value": 720}]}}},
       "options": {"colorMode": "background", "reduceOptions": {"calcs": ["last"]}},
-      "targets": [{"expr": "(1 - clamp_max((sum(increase(vidcast_gateway_requests_total{status=~\"5..\"}[7d])) / sum(increase(vidcast_gateway_requests_total[7d]))) / 0.001, 1)) * 720 / clamp_min(slo:availability:burnrate1h, 0.001)", "legendFormat": "hours"}]
+      "targets": [{"expr": "(1 - clamp_max(((sum(increase(vidcast_gateway_requests_total{status=~\"5..\"}[7d])) or vector(0)) / sum(increase(vidcast_gateway_requests_total[7d]))) / 0.001, 1)) * 720 / clamp_min(slo:availability:burnrate1h, 0.0001)", "legendFormat": "hours"}]
     },
     {
       "id": 4,
@@ -67,7 +67,7 @@
       "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100,
         "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 25}, {"color": "green", "value": 50}]}}},
       "options": {"colorMode": "background", "reduceOptions": {"calcs": ["last"]}},
-      "targets": [{"expr": "100 * (1 - clamp_max((1 - (sum(increase(vidcast_conversion_duration_seconds_bucket{le=~\"300(\\.0)?\"}[7d])) / sum(increase(vidcast_conversion_duration_seconds_count[7d])))) / 0.05, 1))", "legendFormat": "remaining"}]
+      "targets": [{"expr": "100 * (1 - clamp_max((1 - ((sum(increase(vidcast_conversion_duration_seconds_bucket{le=~\"300(\\.0)?\"}[7d])) or vector(0)) / sum(increase(vidcast_conversion_duration_seconds_count[7d])))) / 0.05, 1))", "legendFormat": "remaining"}]
     },
     {
       "id": 6,
@@ -87,7 +87,7 @@
       "fieldConfig": {"defaults": {"unit": "h", "decimals": 1,
         "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 72}, {"color": "green", "value": 720}]}}},
       "options": {"colorMode": "background", "reduceOptions": {"calcs": ["last"]}},
-      "targets": [{"expr": "(1 - clamp_max((1 - (sum(increase(vidcast_conversion_duration_seconds_bucket{le=~\"300(\\.0)?\"}[7d])) / sum(increase(vidcast_conversion_duration_seconds_count[7d])))) / 0.05, 1)) * 720 / clamp_min(slo:conversion_latency:burnrate1h, 0.001)", "legendFormat": "hours"}]
+      "targets": [{"expr": "(1 - clamp_max((1 - ((sum(increase(vidcast_conversion_duration_seconds_bucket{le=~\"300(\\.0)?\"}[7d])) or vector(0)) / sum(increase(vidcast_conversion_duration_seconds_count[7d])))) / 0.05, 1)) * 720 / clamp_min(slo:conversion_latency:burnrate1h, 0.0001)", "legendFormat": "hours"}]
     },
     {
       "id": 8,
@@ -109,7 +109,7 @@
       "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100,
         "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 25}, {"color": "green", "value": 50}]}}},
       "options": {"colorMode": "background", "reduceOptions": {"calcs": ["last"]}},
-      "targets": [{"expr": "100 * (1 - clamp_max((1 - (sum(increase(vidcast_notifications_total{status=\"success\"}[7d])) / sum(increase(vidcast_uploads_total[7d])))) / 0.01, 1))", "legendFormat": "remaining"}]
+      "targets": [{"expr": "100 * (1 - clamp_max((1 - ((sum(increase(vidcast_notifications_total{status=\"success\"}[7d])) or vector(0)) / sum(increase(vidcast_uploads_total[7d])))) / 0.01, 1))", "legendFormat": "remaining"}]
     },
     {
       "id": 10,
@@ -129,7 +129,7 @@
       "fieldConfig": {"defaults": {"unit": "h", "decimals": 1,
         "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 72}, {"color": "green", "value": 720}]}}},
       "options": {"colorMode": "background", "reduceOptions": {"calcs": ["last"]}},
-      "targets": [{"expr": "(1 - clamp_max((1 - (sum(increase(vidcast_notifications_total{status=\"success\"}[7d])) / sum(increase(vidcast_uploads_total[7d])))) / 0.01, 1)) * 720 / clamp_min(slo:e2e_success:burnrate1h, 0.001)", "legendFormat": "hours"}]
+      "targets": [{"expr": "(1 - clamp_max((1 - ((sum(increase(vidcast_notifications_total{status=\"success\"}[7d])) or vector(0)) / sum(increase(vidcast_uploads_total[7d])))) / 0.01, 1)) * 720 / clamp_min(slo:e2e_success:burnrate1h, 0.0001)", "legendFormat": "hours"}]
     },
     {
       "id": 12,
