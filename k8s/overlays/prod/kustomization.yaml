@@ -48,7 +48,7 @@ images:
   - name: johnbaabalola/auth-service
     newTag: 65f2f57
   - name: johnbaabalola/gateway-service
-    newTag: 65f2f57
+    newTag: 327530e
   - name: johnbaabalola/converter-service
     newTag: 65f2f57
   - name: johnbaabalola/notification-service
@@ -59,4 +59,4 @@ images:
     newTag: 65f2f57
   - name: vidcast-frontend
     newName: 501562869470.dkr.ecr.eu-west-2.amazonaws.com/vidcast-frontend
-    newTag: d9e4282
+    newTag: 327530e
