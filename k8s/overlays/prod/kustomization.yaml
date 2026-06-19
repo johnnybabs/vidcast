@@ -59,4 +59,4 @@ images:
     newTag: 65f2f57
   - name: vidcast-frontend
     newName: 501562869470.dkr.ecr.eu-west-2.amazonaws.com/vidcast-frontend
-    newTag: 327530e
+    newTag: 47c1265

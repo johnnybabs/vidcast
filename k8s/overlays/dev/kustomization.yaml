@@ -54,7 +54,7 @@ images:
     newTag: 3b2cc91
   - name: vidcast-frontend
     newName: 501562869470.dkr.ecr.eu-west-2.amazonaws.com/vidcast-frontend
-    newTag: 327530e
+    newTag: 47c1265
 
 # Dev runs one replica of each backend (frontend is already 1 in base).
 replicas:
