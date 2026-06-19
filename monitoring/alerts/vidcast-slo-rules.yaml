@@ -29,21 +29,24 @@ spec:
     - name: vidcast.slo.availability.recording
       interval: 30s
       rules:
+        # "or vector(0)" makes the 5xx numerator emit 0 (not NaN) when no 5xx series
+        # exist — i.e. when the gateway is healthy. Without it, sum() over an empty
+        # selector returns NaN and the burn rate is NaN even under zero-error traffic.
         - record: slo:availability:burnrate5m
           expr: |
-            (sum(rate(vidcast_gateway_requests_total{status=~"5.."}[5m]))
+            ((sum(rate(vidcast_gateway_requests_total{status=~"5.."}[5m])) or vector(0))
              / sum(rate(vidcast_gateway_requests_total[5m]))) / 0.001
         - record: slo:availability:burnrate30m
           expr: |
-            (sum(rate(vidcast_gateway_requests_total{status=~"5.."}[30m]))
+            ((sum(rate(vidcast_gateway_requests_total{status=~"5.."}[30m])) or vector(0))
              / sum(rate(vidcast_gateway_requests_total[30m]))) / 0.001
         - record: slo:availability:burnrate1h
           expr: |
-            (sum(rate(vidcast_gateway_requests_total{status=~"5.."}[1h]))
+            ((sum(rate(vidcast_gateway_requests_total{status=~"5.."}[1h])) or vector(0))
              / sum(rate(vidcast_gateway_requests_total[1h]))) / 0.001
         - record: slo:availability:burnrate6h
           expr: |
-            (sum(rate(vidcast_gateway_requests_total{status=~"5.."}[6h]))
+            ((sum(rate(vidcast_gateway_requests_total{status=~"5.."}[6h])) or vector(0))
              / sum(rate(vidcast_gateway_requests_total[6h]))) / 0.001
 
     - name: vidcast.slo.conversion_latency.recording
