@@ -381,11 +381,17 @@ def status(video_fid):
 
 @server.route("/notifications/unseen-count", methods=["GET"])
 def unseen_count():
-    """Count this user's completed mp3s created since `since` (ISO-8601).
+    """Count this user's completed mp3s created since `since` (ISO-8601 UTC).
 
     The frontend polls this for the Download bubble badge and passes the
     timestamp of the user's last visit to the Download page as `since`, so the
     badge reflects only conversions completed since they last looked.
+
+    Note: `since` is parsed with `.replace("Z", "+00:00")` before fromisoformat()
+    because the frontend sends new Date().toISOString() which emits a trailing Z,
+    and Python 3.10 fromisoformat() does not accept Z (fixed in 3.11). The
+    Dockerfile is pinned to python:3.10-slim-bookworm — if that pin is ever raised
+    to 3.11+ the replace() call becomes a no-op and can be removed.
     """
     access, err = validate.token(request)
     if err:
