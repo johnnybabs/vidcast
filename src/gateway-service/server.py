@@ -2,7 +2,7 @@ import datetime
 import gridfs
 import json
 import os
-import time
+import time  # noqa: F401
 import uuid
 
 import pika
