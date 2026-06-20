@@ -83,22 +83,36 @@ spec:
         # would otherwise return empty → NaN instead of a detectable burn rate.
         # When BOTH rates are zero (idle, no uploads), rate_uploads denominator is
         # also 0, so NaN propagates naturally — alerts stay quiet, which is correct.
+        # The e2e SLO is only meaningful when uploads are actually happening.
+        # Gated with `unless` on zero upload rate: when no uploads are in the
+        # window the recording rule emits no series (NaN), keeping alerts quiet.
+        # The `or vector(0)` on notifications makes the failure case detectable:
+        # uploads present + no notifications = burn rate > 0.
+        # Without the gate, a stale uploads counter produces a false 100× burn.
         - record: slo:e2e_success:burnrate5m
           expr: |
-            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[5m])) or vector(0))
-                  / sum(rate(vidcast_uploads_total[5m])))) / 0.01
+            (
+              (1 - ((sum(rate(vidcast_notifications_total{status="success"}[5m])) or vector(0))
+                    / sum(rate(vidcast_uploads_total[5m])))) / 0.01
+            ) unless (sum(rate(vidcast_uploads_total[5m])) == 0)
         - record: slo:e2e_success:burnrate30m
           expr: |
-            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[30m])) or vector(0))
-                  / sum(rate(vidcast_uploads_total[30m])))) / 0.01
+            (
+              (1 - ((sum(rate(vidcast_notifications_total{status="success"}[30m])) or vector(0))
+                    / sum(rate(vidcast_uploads_total[30m])))) / 0.01
+            ) unless (sum(rate(vidcast_uploads_total[30m])) == 0)
         - record: slo:e2e_success:burnrate1h
           expr: |
-            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[1h])) or vector(0))
-                  / sum(rate(vidcast_uploads_total[1h])))) / 0.01
+            (
+              (1 - ((sum(rate(vidcast_notifications_total{status="success"}[1h])) or vector(0))
+                    / sum(rate(vidcast_uploads_total[1h])))) / 0.01
+            ) unless (sum(rate(vidcast_uploads_total[1h])) == 0)
         - record: slo:e2e_success:burnrate6h
           expr: |
-            (1 - ((sum(rate(vidcast_notifications_total{status="success"}[6h])) or vector(0))
-                  / sum(rate(vidcast_uploads_total[6h])))) / 0.01
+            (
+              (1 - ((sum(rate(vidcast_notifications_total{status="success"}[6h])) or vector(0))
+                    / sum(rate(vidcast_uploads_total[6h])))) / 0.01
+            ) unless (sum(rate(vidcast_uploads_total[6h])) == 0)
 
     # ───────────────────────── burn-rate alerts ─────────────────────────
     - name: vidcast.slo.alerts
