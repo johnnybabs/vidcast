@@ -115,6 +115,16 @@ module "storage" {
 # cluster. The IAM role policy (eks:DescribeCluster) only gets it a kubeconfig;
 # this access entry is what lets `kubectl set image` actually work. EKSEditPolicy
 # allows patching deployments and reading pods — enough for the CD workflow.
+# S2.5 — KMS key for Cosign image signing (supply-chain sprint prerequisite).
+# Key ARN is exported as cosign_key_arn and cosign_key_id; the latter is set
+# as GitHub secret COSIGN_KMS_KEY_ID for use in the S3.1 CI signing step.
+module "cosign" {
+  source = "../../modules/cosign"
+
+  cluster_name = var.cluster_name
+  tags         = local.common_tags
+}
+
 resource "aws_eks_access_entry" "github_deploy" {
   cluster_name  = module.eks.cluster_name
   principal_arn = module.github_oidc.deploy_role_arn

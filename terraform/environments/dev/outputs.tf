@@ -62,3 +62,18 @@ output "backup_irsa_role_arn" {
   description = "Annotate the vidcast-backup ServiceAccount with eks.amazonaws.com/role-arn = this value (I4/P5)"
   value       = module.storage.backup_irsa_role_arn
 }
+
+output "cosign_key_id" {
+  description = "KMS key UUID for Cosign — set as GitHub secret COSIGN_KMS_KEY_ID (S2.5/S3.1)"
+  value       = module.cosign.cosign_key_id
+}
+
+output "cosign_key_arn" {
+  description = "Full KMS key ARN for Cosign signing (S2.5)"
+  value       = module.cosign.cosign_key_arn
+}
+
+output "cosign_key_alias" {
+  description = "KMS key alias for Cosign (S2.5)"
+  value       = module.cosign.cosign_key_alias
+}
